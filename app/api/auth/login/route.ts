@@ -49,34 +49,39 @@ export async function POST(request: Request) {
       const metadataRole = signInData.user.user_metadata?.role as string | undefined
       userRole = metadataRole || "pilot"
 
-      // Create the profile using admin client to bypass RLS
       const adminClient = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         {
           cookies: {
             getAll() {
-              return cookieStore.getAll()
+              return []
             },
-            setAll(cookiesToSet) {
-              cookiesToSet.forEach(({ name, value, options }) => {
-                cookieStore.set(name, value, options)
-              })
+            setAll() {
+              // Admin client doesn't need to set cookies
             },
           },
         },
       )
 
-      const { error: insertError } = await adminClient.from("profiles").insert({
-        id: signInData.user.id,
-        email: signInData.user.email,
-        role: userRole,
-      })
+      const { data: insertedProfile, error: insertError } = await adminClient
+        .from("profiles")
+        .insert({
+          id: signInData.user.id,
+          email: signInData.user.email,
+          role: userRole,
+        })
+        .select()
+        .single()
 
       if (insertError) {
-        console.error("[v0] Error creating profile:", insertError)
+        console.error("[v0] Database error saving new user profile:", insertError)
+        return NextResponse.json(
+          { error: "Database error saving new user", details: insertError.message },
+          { status: 500 },
+        )
       } else {
-        console.log("[v0] Profile created successfully with role:", userRole)
+        console.log("[v0] Profile created successfully:", insertedProfile)
       }
     }
 
